@@ -8,10 +8,14 @@ from ball_detector import BallDetector
 from utils import scene_detect
 import argparse
 import torch
+import csv
+import os
 
 def read_video(path_video):
     cap = cv2.VideoCapture(path_video)
     fps = int(cap.get(cv2.CAP_PROP_FPS))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))  # original width
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))  # original height
     frames = []
     while cap.isOpened():
         ret, frame = cap.read()
@@ -20,7 +24,7 @@ def read_video(path_video):
         else:
             break    
     cap.release()
-    return frames, fps
+    return frames, fps, width, height
 
 def get_court_img():
     court_reference = CourtReference()
@@ -30,7 +34,7 @@ def get_court_img():
     return court_img
 
 def main(frames, scenes, bounces, ball_track, homography_matrices, kps_court, persons_top, persons_bottom,
-         draw_trace=False, trace=7):
+         draw_trace=False, trace=7, width_original=None, height_original=None):
     """
     :params
         frames: list of original images
@@ -46,6 +50,11 @@ def main(frames, scenes, bounces, ball_track, homography_matrices, kps_court, pe
     :return
         imgs_res: list of resulting images
     """
+    width_rate = width_original / 1280
+    height_rate = height_original / 720
+    csv_data = []
+    video_filename = os.path.splitext(os.path.basename(args.path_input_video))[0]
+
     imgs_res = []
     width_minimap = 166
     height_minimap = 350
@@ -82,7 +91,6 @@ def main(frames, scenes, bounces, ball_track, homography_matrices, kps_court, pe
                               fontScale=0.8,
                               thickness=2,
                               color=(0, 255, 0))
-
                 # draw court keypoints
                 if kps_court[i] is not None:
                     for j in range(len(kps_court[i])):
@@ -90,7 +98,6 @@ def main(frames, scenes, bounces, ball_track, homography_matrices, kps_court, pe
                                           radius=0, color=(0, 0, 255), thickness=10)
 
                 height, width, _ = img_res.shape
-
                 # draw bounce in minimap
                 if i in bounces and inv_mat is not None:
                     ball_point = ball_track[i]
@@ -98,11 +105,17 @@ def main(frames, scenes, bounces, ball_track, homography_matrices, kps_court, pe
                     ball_point = cv2.perspectiveTransform(ball_point, inv_mat)
                     court_img = cv2.circle(court_img, (int(ball_point[0, 0, 0]), int(ball_point[0, 0, 1])),
                                                        radius=0, color=(0, 255, 255), thickness=50)
+                    
+                else:
+                    ball_point = ball_track[i]
+                    ball_point = np.array(ball_point, dtype=np.float32).reshape(1, 1, 2)
+                    ball_point = cv2.perspectiveTransform(ball_point, inv_mat)
 
                 minimap = court_img.copy()
 
                 # draw persons
-                persons = persons_top[i] + persons_bottom[i]                    
+                persons = persons_top[i] + persons_bottom[i]         
+                   
                 for j, person in enumerate(persons):
                     if len(person[0]) > 0:
                         person_bbox = list(person[0])
@@ -115,15 +128,75 @@ def main(frames, scenes, bounces, ball_track, homography_matrices, kps_court, pe
                         person_point = cv2.perspectiveTransform(person_point, inv_mat)
                         minimap = cv2.circle(minimap, (int(person_point[0, 0, 0]), int(person_point[0, 0, 1])),
                                                            radius=0, color=(255, 0, 0), thickness=80)
-
+                
+                person_coor = []
+                if len(persons_top[i]) > 0:
+                    person1_point = list(persons_top[i][0][1])
+                    person1_point = np.array(person1_point, dtype=np.float32).reshape(1, 1, 2)
+                    #print(person1_point)
+                    #person1_point = cv2.perspectiveTransform(person1_point, inv_mat)
+                    person_coor.append([person1_point[0,0,0]*width_rate,person1_point[0,0,1]*height_rate])
+                else:
+                    person_coor.append([None,None])
+                    
+                if len(persons_bottom[i]) > 0:
+                    person2_point = list(persons_bottom[i][0][1])
+                    person2_point = np.array(person2_point, dtype=np.float32).reshape(1, 1, 2)
+                    #print(person2_point)
+                    #person2_point = cv2.perspectiveTransform(person2_point, inv_mat)
+                    person_coor.append([person2_point[0,0,0]*width_rate,person2_point[0,0,1]*height_rate])
+                else:
+                    person_coor.append([None,None])
+                        
+                        
+                if ball_point is not None and len(ball_point) > 0:
+                    ball_coords = ball_point
+                else:
+                    ball_coords = [[[None, None]]]
+                    
+                
+                bounce_flag = int(i in bounces)
+                
+                
+                if ball_track[i][0] != None:
+                    ball_x = float(ball_track[i][0] * width_rate)
+                else:
+                    ball_x = None
+                if ball_track[i][1] != None:
+                    ball_y = float(ball_track[i][1] * height_rate)
+                else:
+                    ball_y = None
+                
+                csv_data.append([
+                    i,  # frame
+                    #int(ball_point[0, 0, 0]), int(ball_point[0, 0, 1]), 
+                    bounce_flag,  
+                    person_coor[0][0],
+                    person_coor[0][1],
+                    person_coor[1][0],
+                    person_coor[1][1],
+                    ball_x,
+                    ball_y
+                ])
+                #print(ball_track[i][0],ball_track[i][1])
                 minimap = cv2.resize(minimap, (width_minimap, height_minimap))
                 img_res[30:(30 + height_minimap), (width - 30 - width_minimap):(width - 30), :] = minimap
                 imgs_res.append(img_res)
-
+                
         else:    
-            imgs_res = imgs_res + frames[scenes[num_scene][0]:scenes[num_scene][1]] 
-    return imgs_res        
- 
+            imgs_res = imgs_res + frames[scenes[num_scene][0]:scenes[num_scene][1]]
+    with open(f"{video_filename}_output_coordinates.csv", mode="w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Frame", "Bounce", "Person1_X", "Person1_Y", "Person2_X", "Person2_Y", "Ball_Frame_X", "Ball_Frame_Y"])
+        writer.writerows(csv_data)
+
+    # get back to original video size
+    if width_original is not None and height_original is not None:
+        imgs_res = [cv2.resize(img, (width_original, height_original)) for img in imgs_res]
+
+    return imgs_res, homography_matrices, width_rate, height_rate
+
+
 def write(imgs_res, fps, path_output_video):
     height, width = imgs_res[0].shape[:2]
     out = cv2.VideoWriter(path_output_video, cv2.VideoWriter_fourcc(*'DIVX'), fps, (width, height))
@@ -132,9 +205,15 @@ def write(imgs_res, fps, path_output_video):
         out.write(frame)
     out.release()    
 
+def resize_frames(frames, width, height):
+    resized_frames = []
+    for frame in frames:
+        resized_frame = cv2.resize(frame, (width, height))
+        resized_frames.append(resized_frame)
+    return resized_frames
+
 
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser()
     parser.add_argument('--path_ball_track_model', type=str, help='path to pretrained model for ball detection')
     parser.add_argument('--path_court_model', type=str, help='path to pretrained model for court detection')
@@ -144,7 +223,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    frames, fps = read_video(args.path_input_video) 
+    frames, fps, width_original, height_original = read_video(args.path_input_video)
+    target_width, target_height = 1280, 720
+    frames = resize_frames(frames, target_width, target_height) 
     scenes = scene_detect(args.path_input_video)    
 
     print('ball detection')
@@ -165,12 +246,17 @@ if __name__ == '__main__':
     y_ball = [x[1] for x in ball_track]
     bounces = bounce_detector.predict(x_ball, y_ball)
 
-    imgs_res = main(frames, scenes, bounces, ball_track, homography_matrices, kps_court, persons_top, persons_bottom,
-                    draw_trace=True)
+    imgs_res, homography_matrices, width_rate, height_rate = main(frames, scenes, bounces, ball_track, homography_matrices, kps_court, persons_top, persons_bottom,
+                    draw_trace=True, width_original=width_original, height_original=height_original)
 
     write(imgs_res, fps, args.path_output_video)
 
+    video_filename = os.path.splitext(os.path.basename(args.path_input_video))[0]
+
+    # save homography matrices as npy file
+    homography_matrices_filename = f"{video_filename}_perspective_matrices.npy"
 
 
+    np.save(homography_matrices_filename, homography_matrices)
 
-
+    print(f"Homography matrices saved as {homography_matrices_filename}")
