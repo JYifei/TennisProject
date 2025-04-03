@@ -158,14 +158,14 @@ plt.plot(final_merged_df["Frame"], final_merged_df["Player2_Ball_Dist"], label="
 for frame in impact_frames:
     plt.axvline(x=frame, color='red', linestyle='--', alpha=0.6)
 
-plt.xlabel("Frame")
-plt.ylabel("Distance to Ball")
-plt.title("Player Distance to Ball Over Time")
-plt.xticks(np.arange(min(final_merged_df["Frame"]), max(final_merged_df["Frame"]), 50), rotation=45, fontsize=10)
-plt.yticks(fontsize=10)
-plt.grid(True, linestyle='--', alpha=0.6)
-plt.legend()
-plt.show()
+# plt.xlabel("Frame")
+# plt.ylabel("Distance to Ball")
+# plt.title("Player Distance to Ball Over Time")
+# plt.xticks(np.arange(min(final_merged_df["Frame"]), max(final_merged_df["Frame"]), 50), rotation=45, fontsize=10)
+# plt.yticks(fontsize=10)
+# plt.grid(True, linestyle='--', alpha=0.6)
+# plt.legend()
+# plt.show()
 
 
 # final_merged_df.to_csv("merged_player_ball_data.csv", index=False)
@@ -201,7 +201,26 @@ new_coords_df.to_csv(output_filled_filename, index=False)
 
 
 
+# 1️⃣ 读取原始球场图（可能是3通道）
 court_img = get_court_img()
+
+# 如果是灰度图，转换成 BGR
+if len(court_img.shape) == 2:
+    gray = court_img
+else:
+    gray = cv2.cvtColor(court_img, cv2.COLOR_BGR2GRAY)
+
+# 创建全绿色背景 (BGR)
+green = (60, 160, 60)  # 柔和草绿色
+colored_court = np.zeros((gray.shape[0], gray.shape[1], 3), dtype=np.uint8)
+colored_court[:] = green
+
+# 将原图中的白线（像素值==255）保留为白色
+mask = (gray == 255)
+colored_court[mask] = (255, 255, 255)
+
+court_img = colored_court
+
 
 filename = f"{file_prefix}_perspective_matrices.npy"
 
@@ -241,16 +260,42 @@ for i, row in new_coords_df.iterrows():
     trajectory_points.append((x_transformed, y_transformed))
     
     if row["Player"] == 1:
-        court_img = cv2.circle(court_img, (int(transformed_point[0, 0, 0]), int(transformed_point[0, 0, 1])),
-                                                       radius=0, color=(0, 255, 255), thickness=50)
+        court_img = cv2.circle(
+        court_img,
+        (x_transformed, y_transformed),
+        radius=20,
+        color=(0, 0, 255),   # Red
+        thickness=-1
+    )
     else:
-        court_img = cv2.circle(court_img, (int(transformed_point[0, 0, 0]), int(transformed_point[0, 0, 1])),
-                                                       radius=0, color=(255, 255, 0), thickness=50)
-    cv2.putText(court_img, str(len(trajectory_points)), (x_transformed, y_transformed),
-            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3, cv2.LINE_AA)  # 红色编号
+        court_img = cv2.circle(
+        court_img,
+        (x_transformed, y_transformed),
+        radius=20,
+        color=(255, 0, 0),   # Blue
+        thickness=-1
+    )
+    cv2.putText(
+    court_img,
+    str(len(trajectory_points)),
+    (x_transformed, y_transformed),
+    cv2.FONT_HERSHEY_SIMPLEX,
+    1,
+    (0, 0, 0),               # Black text for readability
+    1,
+    cv2.LINE_AA
+)
 # draw trace
 if len(trajectory_points) > 1:
-    cv2.polylines(court_img, [np.array(trajectory_points, dtype=np.int32)], isClosed=False, color=(0, 255, 0), thickness=3)
+    cv2.polylines(
+        court_img,
+        [np.array(trajectory_points, dtype=np.int32)],
+        isClosed=False,
+        color=(0, 0, 0),      # Black line
+        thickness=5,
+        lineType=cv2.LINE_AA  # <-- 抗锯齿
+    )
+
 
 
 # cv2.imshow("Court Image with Trajectory", court_img)
