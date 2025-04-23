@@ -1,5 +1,4 @@
 import cv2
-import argparse
 import torch
 import os
 import numpy as np
@@ -8,6 +7,12 @@ import shutil
 from court_detection_net import CourtDetectorNet
 from tqdm import tqdm
 import contextlib, io
+
+INPUT_DIR = "input_videos"
+OUTPUT_DIR = "output_segments"
+PROCESSED_DIR = "processed_videos"
+COURT_MODEL_PATH = "models/model_tennis_court_det.pt"
+
 
 def save_keypoints_csv(keypoints, video_path):
     video_name = os.path.splitext(os.path.basename(video_path))[0]
@@ -41,7 +46,7 @@ def split_segments(keypoints, threshold):
         segments.append((start, len(keypoints)))
     return segments
 
-def process_video(path_court_model, path_input_video, batch_size=128):
+def process_video(path_input_video, batch_size=128):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device for inference: {device}")
 
@@ -51,7 +56,7 @@ def process_video(path_court_model, path_input_video, batch_size=128):
     width_orig = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height_orig = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    detector = CourtDetectorNet(path_court_model, device)
+    detector = CourtDetectorNet(COURT_MODEL_PATH, device)
     detector.model.to(device)
     detector.model.eval()
     print(f"Model parameters on device: {next(detector.model.parameters()).device}")
@@ -76,15 +81,14 @@ def process_video(path_court_model, path_input_video, batch_size=128):
                 buffer = []
 
     cap.release()
-
     save_keypoints_csv(keypoints_scaled, path_input_video)
 
-    threshold_seconds = 2  # 秒数阈值
+    threshold_seconds = 2
     threshold_frames = int(threshold_seconds * fps)
     segments = split_segments(keypoints_scaled, threshold=threshold_frames)
 
     video_name = os.path.splitext(os.path.basename(path_input_video))[0]
-    segments_dir = os.path.join('.', f"{video_name}_segments")
+    segments_dir = os.path.join(OUTPUT_DIR, f"{video_name}_segments")
     os.makedirs(segments_dir, exist_ok=True)
 
     for idx, (start, end) in enumerate(segments, 1):
@@ -105,13 +109,11 @@ def process_video(path_court_model, path_input_video, batch_size=128):
             print(f"Saved segment: {segment_path}")
         cap.release()
 
-        # 保存对应的 matrixes
         segment_matrixes = matrixes_all[start:end]
         matrix_path = os.path.join(segments_dir, f"{video_name}_segment_{idx}_matrixes.npy")
         np.save(matrix_path, segment_matrixes)
         print(f"Saved matrixes: {matrix_path}")
-        
-        # 保存对应的关键点坐标为 CSV
+
         segment_keypoints = keypoints_scaled[start:end]
         keypoint_csv_path = os.path.join(segments_dir, f"{video_name}_segment_{idx}_keypoints.csv")
         header = ["Frame"] + [f"KP{i+1}_{axis}" for i in range(14) for axis in ("X", "Y")]
@@ -127,10 +129,19 @@ def process_video(path_court_model, path_input_video, batch_size=128):
                 writer.writerow(row)
         print(f"Saved keypoints CSV: {keypoint_csv_path}")
 
+    # Move processed video to PROCESSED_DIR
+    os.makedirs(PROCESSED_DIR, exist_ok=True)
+    shutil.move(path_input_video, os.path.join(PROCESSED_DIR, os.path.basename(path_input_video)))
+    print(f"Moved processed video to {PROCESSED_DIR}")
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Court detection video splitter')
-    parser.add_argument('--path_court_model', type=str, required=True)
-    parser.add_argument('--path_input_video', type=str, required=True)
-    #parser.add_argument('--path_output_video', type=str, required=True)
-    args = parser.parse_args()
-    process_video(args.path_court_model, args.path_input_video)
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(PROCESSED_DIR, exist_ok=True)
+    videos = [f for f in os.listdir(INPUT_DIR) if f.endswith('.mp4') or f.endswith('.avi')]
+    if not videos:
+        print("No input videos found in input_videos/")
+    for vid in videos:
+        full_path = os.path.join(INPUT_DIR, vid)
+        print(f"\n=== Processing {full_path} ===")
+        process_video(full_path)
