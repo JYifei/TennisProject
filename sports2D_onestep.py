@@ -4,6 +4,10 @@ from pathlib import Path
 from trc import TRCData
 import pandas as pd
 import numpy as np
+
+SEGMENT_DIR = "output_segments"
+SPORTS2D_OUTPUT_DIR = "sports2d_results"
+
 def convert_trc_to_csv(trc_file):
     mocap_data = TRCData()
     mocap_data.load(trc_file)
@@ -40,14 +44,12 @@ def convert_trc_to_csv(trc_file):
     data.to_csv(csv_path, index=False)
     print(f"Converted {trc_file} to CSV")
 
-SEGMENT_DIR = "output_segments"
-SPORTS2D_OUTPUT_DIR = "sports2d_results"
 
 def run_sports2d_on_all_segments():
     os.makedirs(SPORTS2D_OUTPUT_DIR, exist_ok=True)
     for root, _, files in os.walk(SEGMENT_DIR):
         for file in files:
-            if file.endswith(".mp4"):
+            if file.endswith(".mp4") and "_with_edges" in file:
                 full_path = os.path.abspath(os.path.join(root, file))
                 print(f"Processing {full_path}")
 
@@ -62,21 +64,34 @@ def run_sports2d_on_all_segments():
                     "--save_img", "false",
                     "--show_graphs", "false",
                     "--show_realtime_results", "false",
-                    "--nb_persons_to_detect", "2",
-                    "--person_ordering_method", "on_click",
+                    "--person_ordering_method", "highest_likelihood",
                     "-r", output_subdir
                 ]
 
                 subprocess.run(cmd)
 
-
                 sports2d_inner = os.path.join(output_subdir, f"{video_name}_Sports2D")
                 if os.path.exists(sports2d_inner):
+                    # Convert all .trc to .csv
                     for f in os.listdir(sports2d_inner):
                         if f.lower().endswith(".trc"):
                             convert_trc_to_csv(os.path.join(sports2d_inner, f))
+
+                    # Clean: only keep px_personXX.trc / trc.csv and the video
+                    for f in os.listdir(sports2d_inner):
+                        if not (
+                            f.endswith(".mp4") or
+                            ("px_person" in f and (f.endswith(".trc.csv")))
+                        ):
+                            path_to_remove = os.path.join(sports2d_inner, f)
+                            try:
+                                os.remove(path_to_remove)
+                                print(f"Deleted: {path_to_remove}")
+                            except Exception as e:
+                                print(f"Error deleting {path_to_remove}: {e}")
                 else:
                     print(f"[WARNING] No inner Sports2D folder found at: {sports2d_inner}")
+
 
 if __name__ == "__main__":
     run_sports2d_on_all_segments()

@@ -67,3 +67,7 @@ if __name__ == '__main__':
             video_path = os.path.join(SEGMENT_DIR, file)
             output_path = os.path.join(SEGMENT_DIR, file.replace("_annotated.mp4", "_annotated_framed.mp4"))
             annotate_video_with_frame_index(video_path, output_path)
+
+            # 删除原始 annotated 视频
+            os.remove(video_path)
+            print(f"Deleted original video: {video_path}")

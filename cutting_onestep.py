@@ -14,7 +14,7 @@ PROCESSED_DIR = "processed_videos"
 COURT_MODEL_PATH = "models/model_tennis_court_det.pt"
 
 
-def save_keypoints_csv(keypoints, video_path):
+def save_keypoints_csv(keypoints, video_path, scale_x, scale_y):
     video_name = os.path.splitext(os.path.basename(video_path))[0]
     csv_path = f"{video_name}_court_keypoints.csv"
     header = ["Frame"] + [f"KP{i+1}_{axis}" for i in range(14) for axis in ("X","Y")]
@@ -25,7 +25,14 @@ def save_keypoints_csv(keypoints, video_path):
             if kps is None:
                 row = [idx] + [None] * (14*2)
             else:
-                coords = [float(val) for coord in kps for val in np.array(coord).flatten()]
+                coords = []
+                for coord in kps:
+                    arr = np.array(coord).flatten()
+                    if len(arr) >= 2:
+                        x, y = arr[:2]
+                        coords.extend([x * scale_x, y * scale_y])
+                    else:
+                        coords.extend([None, None])  # fallback
                 row = [idx] + coords
             writer.writerow(row)
     print(f"Court keypoints saved to {csv_path}")
@@ -57,6 +64,10 @@ def process_video(path_input_video, batch_size=128):
     height_orig = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     detector = CourtDetectorNet(COURT_MODEL_PATH, device)
+    input_height, input_width = 720, 1280 
+    scale_x = width_orig / input_width
+    scale_y = height_orig / input_height
+
     detector.model.to(device)
     detector.model.eval()
     print(f"Model parameters on device: {next(detector.model.parameters()).device}")
@@ -81,14 +92,15 @@ def process_video(path_input_video, batch_size=128):
                 buffer = []
 
     cap.release()
-    save_keypoints_csv(keypoints_scaled, path_input_video)
+    save_keypoints_csv(keypoints_scaled, path_input_video, scale_x, scale_y)
 
     threshold_seconds = 2
     threshold_frames = int(threshold_seconds * fps)
     segments = split_segments(keypoints_scaled, threshold=threshold_frames)
 
     video_name = os.path.splitext(os.path.basename(path_input_video))[0]
-    segments_dir = os.path.join(OUTPUT_DIR, f"{video_name}_segments")
+    #segments_dir = os.path.join(OUTPUT_DIR, f"{video_name}_segments")
+    segments_dir = OUTPUT_DIR
     os.makedirs(segments_dir, exist_ok=True)
 
     for idx, (start, end) in enumerate(segments, 1):
@@ -124,7 +136,14 @@ def process_video(path_input_video, batch_size=128):
                 if kps is None:
                     row = [rel_idx] + [None] * 28
                 else:
-                    coords = [float(val) for coord in kps for val in np.array(coord).flatten()]
+                    coords = []
+                    for coord in kps:
+                        arr = np.array(coord).flatten()
+                        if len(arr) >= 2:
+                            x, y = arr[:2]
+                            coords.extend([x * scale_x, y * scale_y])
+                        else:
+                            coords.extend([None, None])  # fallback
                     row = [rel_idx] + coords
                 writer.writerow(row)
         print(f"Saved keypoints CSV: {keypoint_csv_path}")
