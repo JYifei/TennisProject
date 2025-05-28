@@ -4,7 +4,7 @@ import torch
 from tracknet import BallTrackerNet
 import torch.nn.functional as F
 from tqdm import tqdm
-from postprocess import refine_kps
+from old.postprocess import refine_kps
 from homography import get_trans_matrix, refer_kps
 
 class CourtDetectorNet():
