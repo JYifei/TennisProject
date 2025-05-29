@@ -5,8 +5,8 @@ from trc import TRCData
 import pandas as pd
 import numpy as np
 
-SEGMENT_DIR = "output_segments"
-SPORTS2D_OUTPUT_DIR = "sports2d_results"
+SEGMENT_DIR = "output_segments_test"
+SPORTS2D_OUTPUT_DIR = "sports2d_results_a"
 
 def convert_trc_to_csv(trc_file):
     mocap_data = TRCData()
@@ -64,9 +64,12 @@ def run_sports2d_on_all_segments():
                     "--save_img", "false",
                     "--show_graphs", "false",
                     "--show_realtime_results", "false",
+                    "--calculate_angles" , "false",
+                    "--save_angles", "false",
                     "--person_ordering_method", "highest_likelihood",
                     "-r", output_subdir
                 ]
+                print("Running command:", cmd)
 
                 subprocess.run(cmd)
 
