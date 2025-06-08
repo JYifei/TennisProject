@@ -190,16 +190,22 @@ def draw_edges_on_video(video_path, csv_path, output_path, cropped_csv_path):
     print(f"Output complete: {output_path}")
 
 if __name__ == '__main__':
+    os.makedirs("masked_segments", exist_ok=True)
+
     for file in os.listdir(SEGMENT_DIR):
         if file.endswith(".mp4") and "_with_edges" not in file and "annotated" not in file and "framed" not in file:
             video_path = os.path.join(SEGMENT_DIR, file)
             base = os.path.splitext(file)[0]
             csv_name = f"{base}_keypoints.csv"
-            csv_path = os.path.join(SEGMENT_DIR, csv_name)
+
+            csv_path = os.path.join("keypoints_data", csv_name)
+
             if not os.path.exists(csv_path):
                 print(f"CSV not found: {csv_path}")
                 continue
-            output_path = os.path.join(SEGMENT_DIR, f"{base}_with_edges.mp4")
-            cropped_csv_path = os.path.join(SEGMENT_DIR, f"{base}_cropped_keypoints.csv")
+
+            output_path = os.path.join("masked_segments", f"{base}_masked.mp4")
+            cropped_csv_path = os.path.join("masked_segments", f"{base}_cropped_keypoints.csv")
+
             print(f"Processing: {video_path}")
             draw_edges_on_video(video_path, csv_path, output_path, cropped_csv_path)

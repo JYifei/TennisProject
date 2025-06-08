@@ -2,11 +2,13 @@ import os
 import pandas as pd
 import numpy as np
 from pathlib import Path
+import shutil
 
 SEGMENT_DIR = "output_segments"
-SPORTS2D_DIR = "sports2d_results"
+KEYPOINT_DIR = "keypoints_data"
+TRACKED_DIR = "postprocessed_sports2D"
+OUTPUT_DIR = "selected_players"
 
-# 获取底线关键点（KP1,5,7,2 和 KP3,6,8,4）的平均位置，跳过缺失值
 def get_baselines(keypoint_csv):
     df = pd.read_csv(keypoint_csv)
     baseline1_y = []
@@ -19,61 +21,85 @@ def get_baselines(keypoint_csv):
             baseline2_y.append(df.loc[0, f"{kp}_Y"])
     y1 = np.mean(baseline1_y) if baseline1_y else np.inf
     y2 = np.mean(baseline2_y) if baseline2_y else np.inf
-    #print(y1,y2)
     return y1, y2
 
-# 计算人体中心点，这里用 CHip 点（中央髋关节）作为代表
 def get_person_center(csv_path):
     df = pd.read_csv(csv_path)
-    # 只取前三秒内的数据（假设fps为30）
-    sub_df = df.iloc[:120]
+    sub_df = df.iloc[:90]  # First 3 seconds (assuming 30 FPS)
     center_points = sub_df[["CHip_x", "CHip_y"]].dropna().values
     if len(center_points) == 0:
         return np.array([np.nan, np.nan])
-    center_mean = np.mean(center_points, axis=0)
-    #print(f"{os.path.basename(csv_path)} center: {center_mean}")
-    return center_mean
+    return np.mean(center_points, axis=0)
 
-# 主逻辑：输出每个视频挑出的两个玩家编号
+def compute_total_movement(csv_path):
+    df = pd.read_csv(csv_path)
+    points = df[["CHip_x", "CHip_y"]].dropna().values
+    if len(points) < 2:
+        return 0
+    return np.sum(np.linalg.norm(np.diff(points, axis=0), axis=1))
+
 def identify_players():
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
     for video_file in os.listdir(SEGMENT_DIR):
-        if not video_file.endswith("_with_edges.mp4"):
+        if not video_file.endswith(".mp4"):
             continue
 
         base_name = Path(video_file).stem
-        keypoint_csv = os.path.join(SEGMENT_DIR, f"{base_name.replace('_with_edges', '')}_keypoints.csv")
+        keypoint_csv = os.path.join(KEYPOINT_DIR, f"{base_name}_keypoints.csv")
         if not os.path.exists(keypoint_csv):
-            print(f"Keypoint CSV not found for {base_name}")
+            print(f"[SKIP] Keypoint CSV not found for {base_name}")
+            continue
+
+        tracked_dir = os.path.join(TRACKED_DIR, f"{base_name}_masked")
+        if not os.path.exists(tracked_dir):
+            print(f"[SKIP] Tracked folder not found: {tracked_dir}")
             continue
 
         y1, y2 = get_baselines(keypoint_csv)
 
-        video_result_dir = os.path.join(SPORTS2D_DIR, base_name, f"{base_name}_Sports2D")
-        if not os.path.exists(video_result_dir):
-            print(f"Sports2D folder not found: {video_result_dir}")
-            continue
+        # Record center distances and movement for each player
+        center_distances = {}
+        movement_amounts = {}
 
-        closest_top = (None, np.inf)
-        closest_bottom = (None, np.inf)
+        for file in os.listdir(tracked_dir):
+            if not file.endswith(".csv"):
+                continue
+            path = os.path.join(tracked_dir, file)
+            center = get_person_center(path)
+            move = compute_total_movement(path)
 
-        for file in os.listdir(video_result_dir):
-            if file.endswith(".trc.csv") and "px_person" in file:
-                person_path = os.path.join(video_result_dir, file)
-                center = get_person_center(person_path)
-                if np.isnan(center).any():
-                    continue
+            if not np.isnan(center).any():
                 dy_top = abs(center[1] - y1)
                 dy_bottom = abs(center[1] - y2)
-                person_id = Path(file).stem
+                center_distances[file] = (dy_top, dy_bottom)
+                movement_amounts[file] = move
 
-                if dy_top < closest_top[1]:
-                    closest_top = (person_id, dy_top)
-                if dy_bottom < closest_bottom[1]:
-                    closest_bottom = (person_id, dy_bottom)
+        if not center_distances:
+            print(f"[WARN] No valid persons found in {base_name}")
+            continue
 
-        final_players = {closest_top[0], closest_bottom[0]}
-        print(f"{base_name}: {sorted(final_players)}")
+        # Select by spatial proximity to top/bottom baselines
+        top_file = min(center_distances.items(), key=lambda x: x[1][0])[0]
+        bottom_file = min(center_distances.items(), key=lambda x: x[1][1])[0]
+        selected_by_position = {top_file, bottom_file}
 
+        # Select by total movement (top 2)
+        sorted_movement = sorted(movement_amounts.items(), key=lambda x: -x[1])
+        selected_by_motion = {sorted_movement[0][0], sorted_movement[1][0]} if len(sorted_movement) >= 2 else set()
+
+        print(f"{base_name}:")
+        print(f"  ➤ Position-based: {selected_by_position}")
+        print(f"  ➤ Motion-based:   {selected_by_motion}")
+
+        if selected_by_position != selected_by_motion:
+            print(f"  ⚠️  Mismatch in player selection methods. Consider reviewing manually.")
+
+        # Output only the players selected by position-based method
+        for filename in selected_by_position:
+            src = os.path.join(tracked_dir, filename)
+            dst = os.path.join(OUTPUT_DIR, f"{base_name}_{filename}")
+            shutil.copyfile(src, dst)
 
 if __name__ == '__main__':
     identify_players()

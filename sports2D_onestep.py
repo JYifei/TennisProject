@@ -4,9 +4,10 @@ from pathlib import Path
 from trc import TRCData
 import pandas as pd
 import numpy as np
+import shutil
 
-SEGMENT_DIR = "output_segments_test"
-SPORTS2D_OUTPUT_DIR = "sports2d_results_a"
+SEGMENT_DIR = "masked_segments"
+SPORTS2D_OUTPUT_DIR = "sports2d_results"
 
 def convert_trc_to_csv(trc_file):
     mocap_data = TRCData()
@@ -44,14 +45,13 @@ def convert_trc_to_csv(trc_file):
     data.to_csv(csv_path, index=False)
     print(f"Converted {trc_file} to CSV")
 
-
 def run_sports2d_on_all_segments():
     os.makedirs(SPORTS2D_OUTPUT_DIR, exist_ok=True)
     for root, _, files in os.walk(SEGMENT_DIR):
         for file in files:
-            if file.endswith(".mp4") and "_with_edges" in file:
+            if file.endswith(".mp4") and "masked" in file:
                 full_path = os.path.abspath(os.path.join(root, file))
-                print(f"Processing {full_path}")
+                print(f"[INFO] Processing {full_path}")
 
                 video_name = Path(file).stem
                 output_subdir = os.path.join(SPORTS2D_OUTPUT_DIR, video_name)
@@ -64,37 +64,46 @@ def run_sports2d_on_all_segments():
                     "--save_img", "false",
                     "--show_graphs", "false",
                     "--show_realtime_results", "false",
-                    "--calculate_angles" , "false",
-                    "--save_angles", "false",
                     "--person_ordering_method", "highest_likelihood",
                     "-r", output_subdir
                 ]
-                print("Running command:", cmd)
 
                 subprocess.run(cmd)
 
                 sports2d_inner = os.path.join(output_subdir, f"{video_name}_Sports2D")
                 if os.path.exists(sports2d_inner):
-                    # Convert all .trc to .csv
+                    # Convert .trc to .csv
                     for f in os.listdir(sports2d_inner):
                         if f.lower().endswith(".trc"):
                             convert_trc_to_csv(os.path.join(sports2d_inner, f))
 
-                    # Clean: only keep px_personXX.trc / trc.csv and the video
+                    # Move everything up
                     for f in os.listdir(sports2d_inner):
-                        if not (
-                            f.endswith(".mp4") or
-                            ("px_person" in f and (f.endswith(".trc.csv")))
-                        ):
-                            path_to_remove = os.path.join(sports2d_inner, f)
-                            try:
-                                os.remove(path_to_remove)
-                                print(f"Deleted: {path_to_remove}")
-                            except Exception as e:
-                                print(f"Error deleting {path_to_remove}: {e}")
-                else:
-                    print(f"[WARNING] No inner Sports2D folder found at: {sports2d_inner}")
+                        src_path = os.path.join(sports2d_inner, f)
+                        dst_path = os.path.join(output_subdir, f)
+                        if os.path.exists(dst_path):
+                            os.remove(dst_path)
+                        shutil.move(src_path, dst_path)
 
+                    try:
+                        os.rmdir(sports2d_inner)
+                        print(f"[INFO] Removed subfolder: {sports2d_inner}")
+                    except Exception as e:
+                        print(f"[WARNING] Failed to remove {sports2d_inner}: {e}")
+                else:
+                    print(f"[WARNING] No inner folder found: {sports2d_inner}")
+
+                # Final cleanup: only keep needed files
+                for f in os.listdir(output_subdir):
+                    if not (
+                        f.endswith(".mp4") or
+                        ("px_person" in f and f.endswith(".trc.csv"))
+                    ):
+                        try:
+                            os.remove(os.path.join(output_subdir, f))
+                            print(f"[INFO] Deleted {f}")
+                        except Exception as e:
+                            print(f"[WARNING] Could not delete {f}: {e}")
 
 if __name__ == "__main__":
     run_sports2d_on_all_segments()

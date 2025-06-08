@@ -1,4 +1,4 @@
-from court_reference import CourtReference
+from utils.court_reference import CourtReference
 import numpy as np
 import cv2
 from scipy.spatial import distance

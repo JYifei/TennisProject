@@ -3,13 +3,13 @@ import numpy as np
 import csv
 import os
 import torch
-from court_reference import CourtReference
-from bounce_detector import BounceDetector
-from person_detector import PersonDetector
-from ball_detector import BallDetector
-from utils import scene_detect
+from utils.court_reference import CourtReference
+from utils.bounce_detector import BounceDetector
+from utils.person_detector import PersonDetector
+from utils.ball_detector import BallDetector
+from utils.utils import scene_detect
 
-SEGMENT_DIR = "output_segments"
+SEGMENT_DIR = "masked_segments"
 BALL_MODEL_PATH = r"models\model_best.pt"
 BOUNCE_MODEL_PATH = r"models\ctb_regr_bounce.cbm"
 
@@ -36,10 +36,19 @@ def get_court_img():
     return court_img
 
 def load_kps_and_matrix(video_path):
-    base_name = os.path.splitext(os.path.basename(video_path))[0]
-    folder = os.path.dirname(video_path)
-    matrix_path = os.path.join(folder, f"{base_name}_matrixes.npy")
-    kps_path = os.path.join(folder, f"{base_name}_keypoints.csv")
+    filename = os.path.splitext(os.path.basename(video_path))[0]  # demo_segment_1_masked
+    if filename.endswith("_masked"):
+        base_name = filename.replace("_masked", "")  # demo_segment_1
+    else:
+        raise ValueError(f"Unexpected video filename format: {filename}")
+
+    kps_path = os.path.join("keypoints_data", f"{base_name}_keypoints.csv")
+    matrix_path = os.path.join("matrix_data", f"{base_name}_matrixes.npy")
+
+    if not os.path.exists(kps_path):
+        raise FileNotFoundError(f"Keypoint CSV not found: {kps_path}")
+    if not os.path.exists(matrix_path):
+        raise FileNotFoundError(f"Matrix file not found: {matrix_path}")
 
     matrices = np.load(matrix_path, allow_pickle=True)
     keypoints = []
@@ -58,6 +67,7 @@ def load_kps_and_matrix(video_path):
                     kps.append(pt)
             keypoints.append(kps if any(k is not None for k in kps) else None)
     return matrices, keypoints
+
 
 def process_and_save(frames, fps, scenes, bounces, ball_track, homography_matrices, kps_court, persons_top, persons_bottom, width_original, height_original, output_csv_path, output_video_path):
     width_rate = width_original / 1280
@@ -124,15 +134,18 @@ def process_and_save(frames, fps, scenes, bounces, ball_track, homography_matric
     for frame in imgs_res:
         out.write(frame)
     out.release()
-
+    
 def run_all_segments():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    for file in os.listdir(SEGMENT_DIR):
+    os.makedirs("detected_segments", exist_ok=True)
+
+    for file in os.listdir("masked_segments"):
         if file.endswith(".mp4"):
-            input_path = os.path.join(SEGMENT_DIR, file)
+            input_path = os.path.join("masked_segments", file)
             base_name = os.path.splitext(file)[0]
-            output_video_path = os.path.join(SEGMENT_DIR, f"{base_name}_annotated.mp4")
-            output_csv_path = os.path.join(SEGMENT_DIR, f"{base_name}_output_coordinates.csv")
+
+            output_video_path = os.path.join("detected_segments", f"{base_name}_detected.mp4")
+            output_csv_path = os.path.join("detected_segments", f"{base_name}_ball_and_player_coordinates.csv")
 
             print(f"Processing {input_path}")
             frames, fps, width_original, height_original = read_video(input_path)

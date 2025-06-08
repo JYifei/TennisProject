@@ -1,4 +1,4 @@
-from tracknet import BallTrackerNet
+from utils.tracknet import BallTrackerNet
 import torch
 import cv2
 import numpy as np

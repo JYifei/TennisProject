@@ -6,7 +6,7 @@ import cv2
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from scipy.signal import argrelextrema
-from main import get_court_img
+from utils.main import get_court_img
 
 SEGMENT_DIR = "output_segments"
 SPORTS2D_DIR = "sports2d_results"

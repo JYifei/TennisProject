@@ -4,7 +4,7 @@ import os
 import numpy as np
 import csv
 import shutil
-from court_detection_net import CourtDetectorNet
+from utils.court_detection_net import CourtDetectorNet
 from tqdm import tqdm
 import contextlib, io
 
@@ -13,10 +13,12 @@ OUTPUT_DIR = "output_segments"
 PROCESSED_DIR = "processed_videos"
 COURT_MODEL_PATH = "models/model_tennis_court_det.pt"
 
+KEYPOINT_DIR = "keypoints_data"
+MATRIX_DIR = "matrix_data"
 
 def save_keypoints_csv(keypoints, video_path, scale_x, scale_y):
     video_name = os.path.splitext(os.path.basename(video_path))[0]
-    csv_path = f"{video_name}_court_keypoints.csv"
+    csv_path = os.path.join(KEYPOINT_DIR, f"{video_name}_court_keypoints.csv")
     header = ["Frame"] + [f"KP{i+1}_{axis}" for i in range(14) for axis in ("X","Y")]
     with open(csv_path, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
@@ -92,16 +94,14 @@ def process_video(path_input_video, batch_size=128):
                 buffer = []
 
     cap.release()
-    save_keypoints_csv(keypoints_scaled, path_input_video, scale_x, scale_y)
+    #save_keypoints_csv(keypoints_scaled, path_input_video, scale_x, scale_y)
 
     threshold_seconds = 2
     threshold_frames = int(threshold_seconds * fps)
     segments = split_segments(keypoints_scaled, threshold=threshold_frames)
 
     video_name = os.path.splitext(os.path.basename(path_input_video))[0]
-    #segments_dir = os.path.join(OUTPUT_DIR, f"{video_name}_segments")
-    segments_dir = OUTPUT_DIR
-    os.makedirs(segments_dir, exist_ok=True)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     for idx, (start, end) in enumerate(segments, 1):
         cap = cv2.VideoCapture(path_input_video)
@@ -113,7 +113,7 @@ def process_video(path_input_video, batch_size=128):
                 break
             if writer is None:
                 height, width = frame.shape[:2]
-                segment_path = os.path.join(segments_dir, f"{video_name}_segment_{idx}.mp4")
+                segment_path = os.path.join(OUTPUT_DIR, f"{video_name}_segment_{idx}.mp4")
                 writer = cv2.VideoWriter(segment_path, cv2.VideoWriter_fourcc(*'DIVX'), fps, (width, height))
             writer.write(frame)
         if writer:
@@ -122,12 +122,12 @@ def process_video(path_input_video, batch_size=128):
         cap.release()
 
         segment_matrixes = matrixes_all[start:end]
-        matrix_path = os.path.join(segments_dir, f"{video_name}_segment_{idx}_matrixes.npy")
+        matrix_path = os.path.join(MATRIX_DIR, f"{video_name}_segment_{idx}_matrixes.npy")
         np.save(matrix_path, segment_matrixes)
         print(f"Saved matrixes: {matrix_path}")
 
         segment_keypoints = keypoints_scaled[start:end]
-        keypoint_csv_path = os.path.join(segments_dir, f"{video_name}_segment_{idx}_keypoints.csv")
+        keypoint_csv_path = os.path.join(KEYPOINT_DIR, f"{video_name}_segment_{idx}_keypoints.csv")
         header = ["Frame"] + [f"KP{i+1}_{axis}" for i in range(14) for axis in ("X", "Y")]
         with open(keypoint_csv_path, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
@@ -148,7 +148,6 @@ def process_video(path_input_video, batch_size=128):
                 writer.writerow(row)
         print(f"Saved keypoints CSV: {keypoint_csv_path}")
 
-    # Move processed video to PROCESSED_DIR
     os.makedirs(PROCESSED_DIR, exist_ok=True)
     shutil.move(path_input_video, os.path.join(PROCESSED_DIR, os.path.basename(path_input_video)))
     print(f"Moved processed video to {PROCESSED_DIR}")
@@ -157,6 +156,9 @@ if __name__ == '__main__':
     os.makedirs(INPUT_DIR, exist_ok=True)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(PROCESSED_DIR, exist_ok=True)
+    os.makedirs(KEYPOINT_DIR, exist_ok=True)
+    os.makedirs(MATRIX_DIR, exist_ok=True)
+
     videos = [f for f in os.listdir(INPUT_DIR) if f.endswith('.mp4') or f.endswith('.avi')]
     if not videos:
         print("No input videos found in input_videos/")
