@@ -9,6 +9,7 @@ from tqdm import tqdm
 INPUT_DIR = "sports2d_results"
 VIDEO_DIR = "output_segments"
 OUTPUT_DIR = "postprocessed_sports2D"
+ANNOTATED_OUTPUT_DIR = "postprocessed_sports2D_annotated"
 MISSING_THRESHOLD = 0.25
 RGB_WEIGHT = 0.5
 POSE_WEIGHT = 0.5
@@ -107,7 +108,7 @@ def track_ids_with_rgb(person_dfs, video_path, max_ids):
             prev_features[pid] = candidates[i]
             id_tracks[pid].append((frame_idx, candidates[i][0]))
 
-    return id_tracks, header
+    return id_tracks, header, n_frames
 
 def save_tracks(segment_name, id_tracks, header):
     segment_out_dir = os.path.join(OUTPUT_DIR, segment_name)
@@ -119,8 +120,39 @@ def save_tracks(segment_name, id_tracks, header):
         df = pd.DataFrame(rows, columns=output_header)
         df.to_csv(os.path.join(segment_out_dir, f"player_{pid}.csv"), index=False)
 
+def annotate_video(video_path, id_tracks, header, output_path, n_frames):
+    cap = cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
+
+    frame_dict = defaultdict(list)
+    for pid, records in id_tracks.items():
+        for f_idx, joints in records:
+            frame_dict[f_idx].append((pid, joints))
+
+    for f_idx in tqdm(range(n_frames), desc="Annotating"):
+        ret, frame = cap.read()
+        if not ret:
+            break
+        for pid, joints in frame_dict.get(f_idx, []):
+            try:
+                x = int(joints[header.index("CHip_x")])
+                y = int(joints[header.index("CHip_y")])
+                cv2.rectangle(frame, (x - 20, y - 50), (x + 20, y + 50), (0, 255, 0), 2)
+                cv2.putText(frame, f"ID {pid}", (x - 25, y - 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            except:
+                continue
+        out.write(frame)
+
+    cap.release()
+    out.release()
+
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(ANNOTATED_OUTPUT_DIR, exist_ok=True)
+
     for segment in os.listdir(INPUT_DIR):
         seg_path = os.path.join(INPUT_DIR, segment)
         print(f"\n=== Processing segment: {segment} ===")
@@ -137,9 +169,13 @@ def main():
             print(f"Warning: video {video_path} not found, skipping.")
             continue
 
-        id_tracks, header = track_ids_with_rgb(person_dfs, video_path, max_ids)
+        id_tracks, header, n_frames = track_ids_with_rgb(person_dfs, video_path, max_ids)
         save_tracks(segment, id_tracks, header)
-        print(f"Saved {len(id_tracks)} tracks to {segment}")
+
+        annotated_path = os.path.join(ANNOTATED_OUTPUT_DIR, f"{segment}_annotated.mp4")
+        annotate_video(video_path, id_tracks, header, annotated_path, n_frames)
+
+        print(f"Saved {len(id_tracks)} tracks and annotated video to {segment}")
 
 if __name__ == "__main__":
     main()

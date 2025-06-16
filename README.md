@@ -54,6 +54,7 @@ python postprocess_onestep.py
 - Filters noisy tracking results
 - Matches player IDs frame-by-frame using position and color features
 - Outputs consistent tracking results to `postprocessed_sports2D/`
+- Save video with bounding boxes to `postprocessed_sports2D_annotated/`
 
 ---
 
@@ -107,7 +108,7 @@ python csvmerge_onestep.py
 | `matrix_data/`            | Homography matrices per rally |
 | `keypoints_data/`         | Detected keypoints per rally |
 | `final_result/`           | Final court projection & CSV hits |
-
+| `postprocessed_sports2D_annotated/` | Video with bounding boxes and player ids |
 ---
 
 ## Notes
