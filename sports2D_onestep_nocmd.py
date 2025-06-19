@@ -51,7 +51,7 @@ def run_one_video_with_config(full_path):
     output_subdir = os.path.join(SPORTS2D_OUTPUT_DIR, video_name)
     os.makedirs(output_subdir, exist_ok=True)
 
-    # 手动构造完整 config（跳过 bug）
+
     config_dict = toml.load('Config_demo.toml')
     config_dict['base']['video_input'] = str(full_path)
     config_dict['base']['result_dir'] = output_subdir
@@ -61,7 +61,7 @@ def run_one_video_with_config(full_path):
 
     Sports2D.process(config_dict)
 
-    # 后处理
+
     sports2d_inner = os.path.join(output_subdir, f"{video_name}_Sports2D")
     if os.path.exists(sports2d_inner):
         for f in os.listdir(sports2d_inner):
