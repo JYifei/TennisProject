@@ -86,6 +86,7 @@ python csvmerge_onestep.py
 - Merges player and ball data
 - Identifies hitting frames (based on wrist-ball distance variation)
 - Projects hit points onto court image using homography
+- Translates pixel coordinates into real world meters(use the midpoint of the net as original)
 - Outputs:
   - `*_impact_coordinates.csv`
   - `*_court_reference.png`
