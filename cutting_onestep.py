@@ -94,7 +94,6 @@ def process_video(path_input_video, batch_size=128):
                 buffer = []
 
     cap.release()
-    #save_keypoints_csv(keypoints_scaled, path_input_video, scale_x, scale_y)
 
     threshold_seconds = 2
     threshold_frames = int(threshold_seconds * fps)
@@ -103,54 +102,71 @@ def process_video(path_input_video, batch_size=128):
     video_name = os.path.splitext(os.path.basename(path_input_video))[0]
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+    success_segments = []
+    failed_segments = []
+
     for idx, (start, end) in enumerate(segments, 1):
-        cap = cv2.VideoCapture(path_input_video)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start)
-        writer = None
-        for frame_no in tqdm(range(start, end), desc=f'Saving segment {idx}', unit='frame'):
-            ret, frame = cap.read()
-            if not ret:
-                break
-            if writer is None:
-                height, width = frame.shape[:2]
-                segment_path = os.path.join(OUTPUT_DIR, f"{video_name}_segment_{idx}.mp4")
-                writer = cv2.VideoWriter(segment_path, cv2.VideoWriter_fourcc(*'DIVX'), fps, (width, height))
-            writer.write(frame)
-        if writer:
-            writer.release()
-            print(f"Saved segment: {segment_path}")
-        cap.release()
+        try:
+            cap = cv2.VideoCapture(path_input_video)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start)
+            writer = None
+            for frame_no in tqdm(range(start, end), desc=f'Saving segment {idx}', unit='frame'):
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                if writer is None:
+                    height, width = frame.shape[:2]
+                    segment_path = os.path.join(OUTPUT_DIR, f"{video_name}_segment_{idx}.mp4")
+                    writer = cv2.VideoWriter(segment_path, cv2.VideoWriter_fourcc(*'DIVX'), fps, (width, height))
+                writer.write(frame)
+            if writer:
+                writer.release()
+                print(f"Saved segment: {segment_path}")
+            cap.release()
 
-        segment_matrixes = matrixes_all[start:end]
-        matrix_path = os.path.join(MATRIX_DIR, f"{video_name}_segment_{idx}_matrixes.npy")
-        np.save(matrix_path, segment_matrixes)
-        print(f"Saved matrixes: {matrix_path}")
+            # Save matrixes
+            segment_matrixes = matrixes_all[start:end]
+            segment_matrixes = np.array(segment_matrixes, dtype=object)
+            matrix_path = os.path.join(MATRIX_DIR, f"{video_name}_segment_{idx}_matrixes.npy")
+            np.save(matrix_path, segment_matrixes)
+            print(f"Saved matrixes: {matrix_path}")
 
-        segment_keypoints = keypoints_scaled[start:end]
-        keypoint_csv_path = os.path.join(KEYPOINT_DIR, f"{video_name}_segment_{idx}_keypoints.csv")
-        header = ["Frame"] + [f"KP{i+1}_{axis}" for i in range(14) for axis in ("X", "Y")]
-        with open(keypoint_csv_path, 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(header)
-            for rel_idx, kps in enumerate(segment_keypoints):
-                if kps is None:
-                    row = [rel_idx] + [None] * 28
-                else:
-                    coords = []
-                    for coord in kps:
-                        arr = np.array(coord).flatten()
-                        if len(arr) >= 2:
-                            x, y = arr[:2]
-                            coords.extend([x * scale_x, y * scale_y])
-                        else:
-                            coords.extend([None, None])  # fallback
-                    row = [rel_idx] + coords
-                writer.writerow(row)
-        print(f"Saved keypoints CSV: {keypoint_csv_path}")
+            # Save keypoints
+            segment_keypoints = keypoints_scaled[start:end]
+            keypoint_csv_path = os.path.join(KEYPOINT_DIR, f"{video_name}_segment_{idx}_keypoints.csv")
+            header = ["Frame"] + [f"KP{i+1}_{axis}" for i in range(14) for axis in ("X", "Y")]
+            with open(keypoint_csv_path, 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(header)
+                for rel_idx, kps in enumerate(segment_keypoints):
+                    if kps is None:
+                        row = [rel_idx] + [None] * 28
+                    else:
+                        coords = []
+                        for coord in kps:
+                            arr = np.array(coord).flatten()
+                            if len(arr) >= 2:
+                                x, y = arr[:2]
+                                coords.extend([x * scale_x, y * scale_y])
+                            else:
+                                coords.extend([None, None])
+                        row = [rel_idx] + coords
+                    writer.writerow(row)
+            print(f"Saved keypoints CSV: {keypoint_csv_path}")
+            success_segments.append(idx)
+
+        except Exception as e:
+            print(f"[ERROR] Skipping segment {idx} due to exception: {e}")
+            failed_segments.append(idx)
+            continue
 
     os.makedirs(PROCESSED_DIR, exist_ok=True)
     shutil.move(path_input_video, os.path.join(PROCESSED_DIR, os.path.basename(path_input_video)))
     print(f"Moved processed video to {PROCESSED_DIR}")
+
+    print("\n=== Processing Summary ===")
+    print(f"✔ Success segments: {success_segments}")
+    print(f"✘ Failed segments : {failed_segments}")
 
 if __name__ == '__main__':
     os.makedirs(INPUT_DIR, exist_ok=True)

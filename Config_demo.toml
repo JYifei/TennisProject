@@ -1,0 +1,40 @@
+[base]
+video_input = []
+nb_persons_to_detect = "all"
+person_ordering_method = "highest_likelihood"
+visible_side = ["auto"]
+input_size = [1920, 1080]
+show_realtime_results = false
+save_vid = true
+save_img = false
+save_pose = true
+calculate_angles = false
+save_angles = false
+result_dir = "outputTRC/"
+pose_model = "Body_with_feet"
+
+[pose]
+mode = "balanced"
+det_frequency = 1
+keypoint_likelihood_threshold = 0.3
+average_likelihood_threshold = 0.5
+keypoint_number_threshold = 0.3
+
+[px_to_meters_conversion]
+to_meters = false
+make_c3d = false
+
+[angles]
+flip_left_right = false
+display_angle_values_on = "none"
+
+[post-processing]
+interpolate = true
+interp_gap_smaller_than = 10
+fill_large_gaps_with = "nan"
+filter = true
+show_graphs = false
+filter_type = "butterworth"
+
+[post-processing.butterworth]
+cut_off_frequency = 6
