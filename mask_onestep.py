@@ -10,9 +10,9 @@ KEYPOINT_BASE_HEIGHT = 720
 WINDOW_SIZE = 11
 POLY_ORDER = 2
 MARGIN = 80  # buffer for court edge
-MARGIN_RATIO_LR = 0.08   # 8% of court width for left/right mask
+MARGIN_RATIO_LR = 0.12   # 8% of court width for left/right mask
 MARGIN_RATIO_TOP = 0.4   # 40% of court height for top mask
-MARGIN_RATIO_BOT = 0.13  # 13% of court height for bottom mask
+MARGIN_RATIO_BOT = 0.20  # 13% of court height for bottom mask
 
 def smooth_keypoints(df):
     for col in df.columns:

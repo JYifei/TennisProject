@@ -62,11 +62,27 @@ def run_sports2d_on_all_segments():
                     "--video_input", full_path,
                     "--save_vid", "true",
                     "--save_img", "false",
+                    #"--save_angles", "false",
                     "--show_graphs", "false",
+                    #"--calculate_angles", "false",
+                    #"--cmodel", "balanced",
                     "--show_realtime_results", "false",
                     "--person_ordering_method", "highest_likelihood",
+                    "--det_frequency", '1',
+                    "--pose_model", "Body_with_feet",
+                    "--make_c3d", "false",
+                    "--to_meters", "false",
+                    "--flip_left_right", "false",
+                    "--interpolate", "true",
+                    "--interp_gap_smaller_than", '10',
+                    "--fill_large_gaps_with", 'last_value',
+                    "--filter", "true",
+                    "--filter_type", "butterworth",
+                    "--cut_off_frequency", '4',
+                    "--fill_large_gaps_with", 'nan',
                     "-r", output_subdir
                 ]
+
 
                 subprocess.run(cmd)
 

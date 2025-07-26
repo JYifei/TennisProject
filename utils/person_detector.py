@@ -39,6 +39,7 @@ class PersonDetector():
         return persons_boxes, probs
     
     def detect_top_and_bottom_players(self, image, inv_matrix, filter_players=False):
+        inv_matrix = np.array(inv_matrix, dtype=np.float32)
         matrix = cv2.invert(inv_matrix)[1]
         mask_top_court = cv2.warpPerspective(self.ref_top_court, matrix, image.shape[1::-1])
         mask_bottom_court = cv2.warpPerspective(self.ref_bottom_court, matrix, image.shape[1::-1])

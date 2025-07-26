@@ -6,15 +6,23 @@ from glob import glob
 from collections import defaultdict
 from tqdm import tqdm
 
+# Config
 INPUT_DIR = "sports2d_results"
 VIDEO_DIR = "output_segments"
 OUTPUT_DIR = "postprocessed_sports2D"
 ANNOTATED_OUTPUT_DIR = "postprocessed_sports2D_annotated"
-MISSING_THRESHOLD = 0.25
-RGB_WEIGHT = 0.5
-POSE_WEIGHT = 0.5
+RGB_WEIGHT = 0.4
+POSE_WEIGHT = 0.2
+CENTER_WEIGHT = 0.4
 PATCH_SIZE = 25
 TORSO_KEYS = ['CHip', 'Neck', 'LShoulder', 'RShoulder']
+
+def interpolate_small_gaps(df, max_gap=25):
+    df = df.replace(0, np.nan)
+    df_interp = df.copy()
+    for col in df.columns:
+        df_interp[col] = df[col].interpolate(limit=max_gap, limit_direction='both')
+    return df_interp.fillna(0)
 
 def load_and_filter_csvs(segment_path):
     files = sorted(glob(os.path.join(segment_path, "*.csv")))
@@ -25,11 +33,8 @@ def load_and_filter_csvs(segment_path):
         df = df[df.iloc[:, 1:].apply(lambda x: not (x == 0).all(), axis=1)]
         if df.empty:
             continue
-        missing_ratio = df.isna().mean().mean()
-        if missing_ratio < MISSING_THRESHOLD:
-            valid_persons.append((f, df.fillna(0)))
-        else:
-            print(f"Filtered out {os.path.basename(f)} due to missing ratio {missing_ratio:.2f}")
+        df_interp = interpolate_small_gaps(df)
+        valid_persons.append((f, df_interp))
     return valid_persons
 
 def extract_keypoints(df, frame_idx):
@@ -52,10 +57,23 @@ def compute_average_rgb(img, keypoints, cols, torso_keys):
                     avg_colors.append(avg_color)
     return np.mean(avg_colors, axis=0) if avg_colors else np.zeros(3)
 
-def compute_combined_distance(p1, p2, rgb1, rgb2):
-    pos_dist = np.linalg.norm(p1 - p2)
+def compute_center_point(keypoints, cols):
+    coords = []
+    for key in TORSO_KEYS:
+        x_key, y_key = f"{key}_x", f"{key}_y"
+        if x_key in cols and y_key in cols:
+            x = keypoints[cols.index(x_key)]
+            y = keypoints[cols.index(y_key)]
+            if x > 0 and y > 0:
+                coords.append([x, y])
+    return np.mean(coords, axis=0) if coords else np.array([0.0, 0.0])
+
+def compute_combined_distance(p1, p2, rgb1, rgb2, center1, center2):
+    valid_mask = (p1 != 0) & (p2 != 0)
+    pos_dist = np.linalg.norm(p1[valid_mask] - p2[valid_mask]) if np.any(valid_mask) else 1e6
     rgb_dist = np.linalg.norm(rgb1 - rgb2)
-    return POSE_WEIGHT * pos_dist + RGB_WEIGHT * rgb_dist
+    center_dist = np.linalg.norm(center1 - center2) if np.all(center1 > 0) and np.all(center2 > 0) else 1e6
+    return POSE_WEIGHT * pos_dist + RGB_WEIGHT * rgb_dist + CENTER_WEIGHT * center_dist
 
 def load_video_frame(video_path, frame_index):
     cap = cv2.VideoCapture(video_path)
@@ -74,6 +92,8 @@ def track_ids_with_rgb(person_dfs, video_path, max_ids):
     current_id = 0
 
     for frame_idx in tqdm(range(n_frames), desc="Tracking"):
+        if frame_idx < 5:
+            continue
         frame = load_video_frame(video_path, frame_idx)
         if frame is None:
             continue
@@ -83,14 +103,15 @@ def track_ids_with_rgb(person_dfs, video_path, max_ids):
             if keypoints is None or not np.any(keypoints):
                 continue
             rgb_feat = compute_average_rgb(frame, keypoints, header, TORSO_KEYS)
-            candidates.append((keypoints, rgb_feat))
+            center = compute_center_point(keypoints, header)
+            candidates.append((keypoints, rgb_feat, center))
 
         used_prev_ids, used_cands, matches = set(), set(), {}
 
-        for c_idx, (pfeat, prgb) in enumerate(candidates):
+        for c_idx, (pfeat, prgb, pcen) in enumerate(candidates):
             best_id, min_dist = None, float('inf')
-            for pid, (prev_feat, prev_rgb) in prev_features.items():
-                dist = compute_combined_distance(pfeat, prev_feat, prgb, prev_rgb)
+            for pid, (prev_feat, prev_rgb, prev_cen) in prev_features.items():
+                dist = compute_combined_distance(pfeat, prev_feat, prgb, prev_rgb, pcen, prev_cen)
                 if dist < min_dist:
                     min_dist, best_id = dist, pid
             if best_id is not None and best_id not in used_prev_ids:
@@ -98,7 +119,7 @@ def track_ids_with_rgb(person_dfs, video_path, max_ids):
                 used_prev_ids.add(best_id)
                 used_cands.add(c_idx)
 
-        for i, (feat, rgb) in enumerate(candidates):
+        for i, (feat, rgb, cen) in enumerate(candidates):
             if i not in used_cands and current_id < max_ids:
                 matches[i] = current_id
                 current_id += 1
@@ -115,15 +136,14 @@ def save_tracks(segment_name, id_tracks, header):
     os.makedirs(segment_out_dir, exist_ok=True)
     for pid, records in id_tracks.items():
         rows = [[f_idx] + joints.tolist() for f_idx, joints in records]
-        expected_cols = len(rows[0])
-        output_header = ["Frame"] + header[:expected_cols - 1]
+        output_header = ["Frame"] + header[:len(rows[0]) - 1]
         df = pd.DataFrame(rows, columns=output_header)
         df.to_csv(os.path.join(segment_out_dir, f"player_{pid}.csv"), index=False)
 
 def annotate_video(video_path, id_tracks, header, output_path, n_frames):
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
-    width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
 
@@ -145,7 +165,6 @@ def annotate_video(video_path, id_tracks, header, output_path, n_frames):
             except:
                 continue
         out.write(frame)
-
     cap.release()
     out.release()
 
